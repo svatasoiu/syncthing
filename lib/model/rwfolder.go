@@ -22,6 +22,7 @@ import (
 	"github.com/syncthing/syncthing/lib/db"
 	"github.com/syncthing/syncthing/lib/events"
 	"github.com/syncthing/syncthing/lib/fs"
+	"github.com/syncthing/syncthing/lib/fswatcher"
 	"github.com/syncthing/syncthing/lib/ignore"
 	"github.com/syncthing/syncthing/lib/osutil"
 	"github.com/syncthing/syncthing/lib/protocol"
@@ -187,6 +188,13 @@ func (f *rwFolder) Serve() {
 	var prevSec int64
 	var prevIgnoreHash string
 
+	fswatcher.Tempnamer = defTempNamer
+	fsWatcher := fswatcher.NewFsWatcher(f.dir)
+	fsWatchChan, err := fsWatcher.StartWatchingFilesystem()
+	if err != nil {
+		l.Warnln(err)
+	}
+
 	for {
 		select {
 		case <-f.stop:
@@ -303,6 +311,9 @@ func (f *rwFolder) Serve() {
 			default:
 				l.Infoln("Completed initial scan (rw) of folder", f.folderID)
 				close(f.initialScanCompleted)
+				if fsWatcher.WatchingFs {
+					f.delayFullScan()
+				}
 			}
 
 		case req := <-f.scan.now:
@@ -310,6 +321,10 @@ func (f *rwFolder) Serve() {
 
 		case next := <-f.scan.delay:
 			f.scan.timer.Reset(next)
+
+		case fsEvents := <-fsWatchChan:
+			l.Debugln(f, "filesystem notification rescan")
+			f.scanSubdirsIfHealthy(fsEvents.GetPaths())
 		}
 	}
 }
@@ -323,6 +338,10 @@ func (f *rwFolder) IndexUpdated() {
 		// queued to ensure we recheck after the pull, but beyond that we must
 		// make sure to not block index receiving.
 	}
+}
+
+func (f *rwFolder) delayFullScan() {
+	f.scan.LongReschedule()
 }
 
 func (f *rwFolder) String() string {
