@@ -121,6 +121,7 @@ var (
 	errDeviceIgnored       = errors.New("device is ignored")
 	errNotRelative         = errors.New("not a relative path")
 	errNotDir              = errors.New("parent is not a directory")
+	errNameConflict        = errors.New("filename collides with existing file")
 )
 
 // NewModel creates and starts a new model. The model starts in read-only mode,
@@ -1115,6 +1116,11 @@ func (m *Model) Request(deviceID protocol.DeviceID, folder, name string, offset 
 	}
 
 	if !osutil.IsDir(folderPath, filepath.Dir(name)) {
+		l.Debugf("%v REQ(in) for file not in dir: %s: %q / %q o=%d s=%d", m, deviceID, folder, name, offset, len(buf))
+		return protocol.ErrNoSuchFile
+	}
+
+	if !osutil.CheckNameConflict(folderPath, name) {
 		l.Debugf("%v REQ(in) for file not in dir: %s: %q / %q o=%d s=%d", m, deviceID, folder, name, offset, len(buf))
 		return protocol.ErrNoSuchFile
 	}

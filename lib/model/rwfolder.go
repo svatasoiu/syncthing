@@ -454,6 +454,13 @@ func (f *sendReceiveFolder) pullerIteration(ignores *ignore.Matcher) int {
 			continue
 		}
 
+		// Verify that we handle the right thing and not something whose name
+		// collides.
+		if !osutil.CheckNameConflict(f.dir, fi.Name) {
+			f.newError(fi.Name, errNameConflict)
+			continue
+		}
+
 		switch {
 		case fi.IsDeleted():
 			// A deleted file, directory or symlink
@@ -540,6 +547,13 @@ nextFile:
 		// and not a symlink or empty space.
 		if !osutil.IsDir(f.dir, filepath.Dir(fi.Name)) {
 			f.newError(fi.Name, errNotDir)
+			continue
+		}
+
+		// Verify that we handle the right thing and not something whose name
+		// collides.
+		if !osutil.CheckNameConflict(f.dir, fi.Name) {
+			f.newError(fi.Name, errNameConflict)
 			continue
 		}
 
