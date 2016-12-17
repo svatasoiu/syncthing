@@ -1306,6 +1306,16 @@ func (f *sendReceiveFolder) copierRoutine(in <-chan copyBlocksState, pullChan ch
 					if err != nil {
 						return false
 					}
+					// The following checks are racy
+					if !osutil.IsDir(folderRoots[folder], filepath.Dir(file)) {
+						return false
+					}
+					if !osutil.CheckNameConflict(folderRoots[folder], file) {
+						return false
+					}
+					if info, err := osutil.Lstat(inFile); err != nil || !info.Mode().IsRegular() {
+						return false
+					}
 					fd, err := os.Open(inFile)
 					if err != nil {
 						return false
