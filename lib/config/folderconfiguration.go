@@ -166,9 +166,8 @@ func (f *FolderConfiguration) prepare() {
 	if f.cachedTmpDir != "" {
 		relativePath, err := filepath.Rel(f.cachedPath, f.cachedTmpDir)
 		if err != nil || filepath.HasPrefix(relativePath, "..") {
-			// if not under Path, just create temporary
-			// files under root directory
-			f.cachedTmpDir = f.cachedPath
+			// if not under Path, revert to default behavior
+			f.cachedTmpDir = ""
 		}
 	}
 
@@ -228,7 +227,7 @@ func (f *FolderConfiguration) cleanedPath() string {
 
 func (f *FolderConfiguration) cleanedTmpPath() string {
 	if f.TempDirPath == "" {
-		return f.Path()
+		return ""
 	}
 	return cleanPath(f.TempDirPath)
 }

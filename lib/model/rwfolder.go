@@ -1040,7 +1040,18 @@ func (f *sendReceiveFolder) handleFile(file protocol.FileInfo, copyChan chan<- c
 	}
 
 	// Figure out the absolute filenames we need once and for all
-	tempName, err := rootedJoinedPath(f.tmpDir, defTempNamer.TempName(file.Name))
+	var tempDirName, tempFileName string
+
+	if f.tmpDir == "" {
+		tempDirName = f.dir
+		tempFileName = defTempNamer.TempName(file.Name)
+	} else {
+		// if custom temp dir, use only basename of file to create temp file name
+		tempDirName = f.tmpDir
+		tempFileName = defTempNamer.TempName(filepath.Base(file.Name))
+	}
+
+	tempName, err := rootedJoinedPath(tempDirName, tempFileName)
 	if err != nil {
 		f.newError(file.Name, err)
 		return
@@ -1451,7 +1462,7 @@ func (f *sendReceiveFolder) performFinish(state *sharedPullerState) error {
 			}
 		}
 	}
-
+	l.Debugln(f, "RENAME", state.tempName, "to", state.realName)
 	// Replace the original content with the new one. If it didn't work,
 	// leave the temp file in place for reuse.
 	if err := osutil.TryRename(state.tempName, state.realName); err != nil {
