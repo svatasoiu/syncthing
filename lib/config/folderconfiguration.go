@@ -42,8 +42,10 @@ type FolderConfiguration struct {
 	Fsync                 bool                        `xml:"fsync" json:"fsync"`
 	DisableWeakHash       bool                        `xml:"disableWeakHash" json:"disableWeakHash"`
 	Paused                bool                        `xml:"paused" json:"paused"`
+	TempDirPath           string                      `xml:"tempDirPath" json:"tempDirPath"`
 
-	cachedPath string
+	cachedPath   string
+	cachedTmpDir string
 
 	DeprecatedReadOnly bool `xml:"ro,attr,omitempty" json:"-"`
 }
@@ -79,6 +81,19 @@ func (f FolderConfiguration) Path() string {
 		return f.cleanedPath()
 	}
 	return f.cachedPath
+}
+
+// TmpPath returns directory in which temporary files should
+// be created.
+func (f FolderConfiguration) TmpPath() string {
+	// This is intentionally not a pointer method, because things like
+	// cfg.Folders["default"].TmpDirPath() should be valid.
+
+	if f.cachedTmpDir == "" && f.TempDirPath != "" {
+		l.Infoln("bug: uncached TmpDir call (should only happen in tests)")
+		return f.cleanedTmpPath()
+	}
+	return f.cachedTmpDir
 }
 
 func (f *FolderConfiguration) CreateMarker() error {
@@ -118,24 +133,44 @@ func (f *FolderConfiguration) DeviceIDs() []protocol.DeviceID {
 	return deviceIDs
 }
 
+func fixPath(p string) string {
+	// The reason it's done like this:
+	// C:          ->  C:\            ->  C:\        (issue that this is trying to fix)
+	// C:\somedir  ->  C:\somedir\    ->  C:\somedir
+	// C:\somedir\ ->  C:\somedir\\   ->  C:\somedir
+	// This way in the tests, we get away without OS specific separators
+	// in the test configs.
+	p = filepath.Dir(p + string(filepath.Separator))
+
+	// If we're not on Windows, we want the path to end with a slash to
+	// penetrate symlinks. On Windows, paths must not end with a slash.
+	if runtime.GOOS != "windows" && p[len(p)-1] != filepath.Separator {
+		p = p + string(filepath.Separator)
+	}
+	return p
+}
+
 func (f *FolderConfiguration) prepare() {
 	if f.RawPath != "" {
-		// The reason it's done like this:
-		// C:          ->  C:\            ->  C:\        (issue that this is trying to fix)
-		// C:\somedir  ->  C:\somedir\    ->  C:\somedir
-		// C:\somedir\ ->  C:\somedir\\   ->  C:\somedir
-		// This way in the tests, we get away without OS specific separators
-		// in the test configs.
-		f.RawPath = filepath.Dir(f.RawPath + string(filepath.Separator))
+		f.RawPath = fixPath(f.RawPath)
+	}
 
-		// If we're not on Windows, we want the path to end with a slash to
-		// penetrate symlinks. On Windows, paths must not end with a slash.
-		if runtime.GOOS != "windows" && f.RawPath[len(f.RawPath)-1] != filepath.Separator {
-			f.RawPath = f.RawPath + string(filepath.Separator)
-		}
+	if f.TempDirPath != "" {
+		f.TempDirPath = fixPath(f.TempDirPath)
 	}
 
 	f.cachedPath = f.cleanedPath()
+	f.cachedTmpDir = f.cleanedTmpPath()
+
+	// validate to make sure TmpPath is a subdirectory of RawPath
+	if f.cachedTmpDir != "" {
+		relativePath, err := filepath.Rel(f.cachedPath, f.cachedTmpDir)
+		if err != nil || filepath.HasPrefix(relativePath, "..") {
+			// if not under Path, just create temporary
+			// files under root directory
+			f.cachedTmpDir = f.cachedPath
+		}
+	}
 
 	if f.RescanIntervalS > MaxRescanIntervalS {
 		f.RescanIntervalS = MaxRescanIntervalS
@@ -148,12 +183,14 @@ func (f *FolderConfiguration) prepare() {
 	}
 }
 
-func (f *FolderConfiguration) cleanedPath() string {
-	if f.RawPath == "" {
+// cleanPath returns rawPath with tilde's expanded
+// and abolutified
+func cleanPath(rawPath string) string {
+	if rawPath == "" {
 		return ""
 	}
 
-	cleaned := f.RawPath
+	cleaned := rawPath
 
 	// Attempt tilde expansion; leave unchanged in case of error
 	if path, err := osutil.ExpandTilde(cleaned); err == nil {
@@ -172,7 +209,7 @@ func (f *FolderConfiguration) cleanedPath() string {
 
 	// Attempt to enable long filename support on Windows. We may still not
 	// have an absolute path here if the previous steps failed.
-	if runtime.GOOS == "windows" && filepath.IsAbs(cleaned) && !strings.HasPrefix(f.RawPath, `\\`) {
+	if runtime.GOOS == "windows" && filepath.IsAbs(cleaned) && !strings.HasPrefix(rawPath, `\\`) {
 		return `\\?\` + cleaned
 	}
 
@@ -183,6 +220,17 @@ func (f *FolderConfiguration) cleanedPath() string {
 	}
 
 	return cleaned
+}
+
+func (f *FolderConfiguration) cleanedPath() string {
+	return cleanPath(f.RawPath)
+}
+
+func (f *FolderConfiguration) cleanedTmpPath() string {
+	if f.TempDirPath == "" {
+		return f.Path()
+	}
+	return cleanPath(f.TempDirPath)
 }
 
 type FolderDeviceConfigurationList []FolderDeviceConfiguration

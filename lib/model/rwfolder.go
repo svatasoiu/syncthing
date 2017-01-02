@@ -84,6 +84,7 @@ type sendReceiveFolder struct {
 
 	mtimeFS   *fs.MtimeFS
 	dir       string
+	tmpDir    string
 	versioner versioner.Versioner
 	sleep     time.Duration
 	pause     time.Duration
@@ -111,6 +112,7 @@ func newSendReceiveFolder(model *Model, cfg config.FolderConfiguration, ver vers
 
 		mtimeFS:   mtimeFS,
 		dir:       cfg.Path(),
+		tmpDir:    cfg.TmpPath(),
 		versioner: ver,
 
 		queue:       newJobQueue(),
@@ -1038,7 +1040,7 @@ func (f *sendReceiveFolder) handleFile(file protocol.FileInfo, copyChan chan<- c
 	}
 
 	// Figure out the absolute filenames we need once and for all
-	tempName, err := rootedJoinedPath(f.dir, defTempNamer.TempName(file.Name))
+	tempName, err := rootedJoinedPath(f.tmpDir, defTempNamer.TempName(file.Name))
 	if err != nil {
 		f.newError(file.Name, err)
 		return
